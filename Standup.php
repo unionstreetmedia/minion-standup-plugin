@@ -116,7 +116,6 @@ return $Standup
         foreach($Standup->channels as $channel) {
             if (isset($Standup->startTime[$channel]) && time() > $Standup->startTime[$channel] + $Standup->standupWait) {
                 // taking too long
-                echo'yo';
                 $Standup->Minion->msg('No response in over ' . $Standup->standupWait . ' seconds. Standup is cancelled for today. Type !standup to restart it.', $channel);
                 $Standup->sitDown();
             }
