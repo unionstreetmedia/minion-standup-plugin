@@ -3,11 +3,7 @@
 Make minion run daily standups. 
 
 ## Installation
-Clone this into a directory named `Standup` in your minion's `plugins` subdirectory. In the `Standup` directory, run
-
-    $ composer install
-
-to install the necessary library.
+Clone this into a directory named `Standup` in your minion's `plugins` subdirectory. 
 
 ## Configuration
 Put something like the following in your minion's `config.php`.
