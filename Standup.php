@@ -2,6 +2,8 @@
 
 namespace Minion\Plugins;
 
+date_default_timezone_set ('America/New_York');
+
 class Standup extends \Minion\Plugin {
 
     public function removeUser($name, $array) {
@@ -25,6 +27,7 @@ class Standup extends \Minion\Plugin {
         $this->hasResponded = false;
         
         $this->now = array();
+        $this->startTime = array();
     }
     
     public function pickUser($channel) {
@@ -66,6 +69,7 @@ return $Standup
     $Standup->standupWait = $Standup->conf('StandupWait');
     
     $Standup->now = array(); 
+    $Standup->startTime = array();
 })
 
 ->on('loop-end', function () use ($Standup) {
@@ -97,6 +101,7 @@ return $Standup
                         $Standup->currentUser[$channel] = $user;
                         // start the timer
                         $Standup->now[$channel] = time();
+                        $Standup->startTime[$channel] = time();
                     }
                 }
             }
@@ -106,10 +111,22 @@ return $Standup
 
 // this contains all of the time related statements
 ->on('loop-start', function () use ($Standup) {
+    // standup wait
+    if ($Standup->standing && !$Standup->hasResponded) {
+        foreach($Standup->channels as $channel) {
+            if (isset($Standup->startTime[$channel]) && time() > $Standup->startTime[$channel] + $Standup->standupWait) {
+                // taking too long
+                echo'yo';
+                $Standup->Minion->msg('No response in over ' . $Standup->standupWait . ' seconds. Standup is cancelled for today. Type !standup to restart it.', $channel);
+                $Standup->sitDown();
+            }
+        }
+    }
+
     // user wait
     if ($Standup->standing && !$Standup->first) {
         foreach($Standup->channels as $channel) {
-            if (isset($Standup->now[$channel]) && time() - $Standup->now[$channel] >= $Standup->userWait && $Standup->currentUser[$channel]) {
+            if (isset($Standup->now[$channel]) && time() > $Standup->now[$channel] + $Standup->userWait && $Standup->currentUser[$channel]) {
                 // taking too long
                 $Standup->Minion->msg($Standup->currentUser[$channel] . ' took too long and has been moved to the end of the list.', $channel);
                 
@@ -117,16 +134,8 @@ return $Standup
                 $Standup->pickUser($channel);
             }
         }
-    // standup wait
-    } else if ($Standup->standing && !$Standup->hasResponded) {
-        foreach($Standup->channels as $channel) {
-            if (isset($Standup->now[$channel]) && time() - $Standup->now[$channel] >= $Standup->standupWait) {
-                // taking too long
-                $Standup->Minion->msg('No response in over ' . $Standup->standupWait . ' seconds. Standup is cancelled for today. Type "!standup" to restart it.', $channel);
-                $Standup->sitDown();
-            }
-        }
-    }
+    } 
+    
 })
 
 ->on('PRIVMSG', function (&$data) use ($Standup) {
@@ -149,7 +158,7 @@ return $Standup
         $matches = $Standup->matchCommand($data, $pattern);
         
         // watch for someone who isn't here
-        $pattern2 = "/{$Standup->currentUser[$currentChannel]}+(?:is|s|'s(?:out|n't|nt|not|in|)?)?/i";
+        $pattern2 = "/{$Standup->currentUser[$currentChannel]}+(?:is|s|'s(?:out|n't|nt|not|in|))?/i";
         $matches2 = $Standup->matchCommand($data, $pattern2);
         
         // we got our first response
@@ -178,7 +187,6 @@ return $Standup
 
 // 353 is the NAMES command
 ->on('353', function (&$data) use ($Standup) {
-    var_dump($data);
     $currentChannel = $data['arguments'][2];
     $channelUsers = $Standup->currentUsers[$currentChannel];
     $channelUsers = explode(" ", $data['message']);
@@ -192,7 +200,9 @@ return $Standup
     $channelUsers = $Standup->removeUser($Standup->Minion->State['Nickname'], $channelUsers);
     
     // shuffle the array
-    shuffle($channelUsers);
+    if (is_array($channelUsers)) {
+        shuffle($channelUsers);
+    }
     
     $Standup->currentUsers[$currentChannel] = $channelUsers;
 })
