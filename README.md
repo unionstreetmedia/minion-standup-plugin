@@ -31,7 +31,11 @@ Put something like the following in your minion's `config.php`.
 * If username is supposed to be doing their standup and another user says "username isn't here" or similar, minion immediately moves them to the end of the list and continues.
 * If `StandupWait` seconds elapses without anyone responding, minion will cancel standup.
 * If `UserWait` seconds elapses without _username_ responding, minion will add them to the end of the list and continue.
+* If Minion has tried calling a user more than `MaxRetry`, it will remove that user from standup
+* Minion recognizes both usernames and nicknames.
 
 
 ## Usage
-Standup will run automatically at the specified `Time`. In order to force standup to start at an abnormal time, use the command: `!standup`.
+Standup will run automatically at the specified `Time`. There are some commands to modify this behavior:
+* `!standup` forces minion to start standup
+* `!sitdown` forces minion to end standup
