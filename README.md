@@ -21,7 +21,8 @@ Put something like the following in your minion's `config.php`.
                 'minion'
             ),
             'UserWait' => 90,
-            'StandupWait' => 150
+            'StandupWait' => 150,
+            'MaxRetry' => 2
     );
 
 ## What it does
