@@ -41,7 +41,7 @@ class Standup extends \Minion\Plugin {
         $this->standing = false;
         
         $this->currentUsers = array();
-        $this->currentUSer = array();
+        $this->currentUser = array();
         
         $this->callFirst = true;
         $this->hasResponded = false;
@@ -72,7 +72,7 @@ class Standup extends \Minion\Plugin {
             // Check if we've called the first user yet
             if ($this->callFirst) {
                 // Check for repeat user calls
-                if ($user[0] == $this->currentUser[$channel][0]) {
+                if (isset($this->currentUser[$channel]) and $user[0] == $this->currentUser[$channel][0]) {
                     $this->Minion->msg("That's all folks, have a good day!", $channel);
                     $this->sitDown();
                 } else {
@@ -262,7 +262,7 @@ return $Standup
     // If the command is !sitdown, force standup to end
     } else if ($command == 'sitdown') {
         $Standup->sitDown();
-        $this->Minion->msg("That's all folks, have a good day!", $channel);
+        $Standup->Minion->msg("That's all folks, have a good day!", $channel);
     }
     
     // Check if standup is running on this channel
