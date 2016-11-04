@@ -2,7 +2,7 @@
 
 namespace Minion\Plugins;
 
-date_default_timezone_set ('America/New_York');
+date_default_timezone_set('America/New_York');
 
 /** 
  * Minion, run our daily standup
@@ -20,11 +20,11 @@ class Standup extends \Minion\Plugin {
      * @return void
      */
     public function removeUser($name, $channel) {
-        if ($this->currentUsers[$channel] && $name) {
+        if ($this->currentUsers[$channel] and $name) {
             foreach ($this->currentUsers[$channel] as $key => $user) {
                 if ($user[0] == $name) {
                     array_splice($this->currentUsers[$channel], $key, 1);
-                } 
+                }
             }
         }
     }
@@ -64,9 +64,10 @@ class Standup extends \Minion\Plugin {
      */
     public function pickUser($channel) {
         // Checks to make sure we still have users to pick
-        if ($this->populated) {
+        if ($this->populated and $this->currentUsers[$channel]) {
         
             // Grab the first user in the array
+
             $user = array_shift($this->currentUsers[$channel]);
             
             // Check if we've called the first user yet
@@ -131,6 +132,24 @@ class Standup extends \Minion\Plugin {
             $this->pickUser($channel);   
         }
     }
+
+    /**
+     * Handles a user departing the channel
+     * @param $oldUser string  Usernmae or Nickname
+     */
+    public function userDepart($oldUser) {
+        // Use a regex to get the actual name of the quitter
+        preg_match('/(.*)(?=!)/', $oldUser, $matches);
+        if ($this->standing) {
+            foreach ($this->channels as $channel) { 
+                if ($this->currentUser[$channel][0] == $matches[0]) {
+                    $this->pickUser($channel);
+                } else {
+                    $this->removeUser($matches[0], $channel);
+                }
+            }
+        }
+    }
 }
 
 
@@ -148,7 +167,7 @@ return $Standup
  * It initiates all of the $Standup variables and gets config values. 
  */
 ->on('before-loop', function () use ($Standup) {
-    $Standup->forceStandup = true;
+    $Standup->forceStandup = false;
     $Standup->standing = false;
     
     $Standup->channels = $Standup->conf('Channels');
@@ -222,14 +241,14 @@ return $Standup
     // Check if the first user has been called
     if ($Standup->standing && !$Standup->callFirst) {
         foreach($Standup->channels as $channel) {
-            
             // If we've already called someone, but they haven't responded past the wait time,
             // We move that person to the end of the list and choose someone else
             if (isset($Standup->now[$channel]) && time() > $Standup->now[$channel] + $Standup->userWait && $Standup->currentUser[$channel]) {
                 if ($Standup->currentUser[$channel][2] < $Standup->maxRetry) {
-                    var_dump($Standup->currentUser[$channel]);
                     $Standup->currentUser[$channel][2]++;
-                    array_push($Standup->currentUsers[$channel], $Standup->currentUser[$channel]);
+                    if ($Standup->currentUser[$channel][2] < $Standup->maxRetry) {
+                        array_push($Standup->currentUsers[$channel], $Standup->currentUser[$channel]);
+                    }
                     $Standup->Minion->msg($Standup->currentUser[$channel][0] . ' took too long and has been moved to the end of the list.', $channel);
                 }
                 
@@ -253,7 +272,7 @@ return $Standup
     
     // Get any commands.
     list ($command, $arguments) = $Standup->simpleCommand($data);
-    
+
     // If the command is !standup, force start standup
     if ($command == 'standup') {
         $Standup->sitDown();
@@ -275,8 +294,12 @@ return $Standup
         
         // Match any message that indicates a user is busy
         // i.e. _username_ is out, isn't here, is not, is in a meeting (case insensitive)
-        $pattern2 = "/({$Standup->currentUser[$channel][0]}|{$Standup->currentUser[$channel][1]})+(?:is|s|'s(?:out|n't|nt|not|in|))?/i";
+        $pattern2 = "/^skip ({$Standup->currentUser[$channel][0]}|{$Standup->currentUser[$channel][1]})/i";
         $matches2 = $Standup->matchCommand($data, $pattern2);
+
+        // Match remove a user from the standup list
+        $pattern3 = "/^remove ({$Standup->currentUser[$channel][0]}|{$Standup->currentUser[$channel][1]})/i";
+        $matches3 = $Standup->matchCommand($data, $pattern3);
         
         // Check if this is the first response for this standup
         if (!$Standup->hasResponded) {
@@ -291,11 +314,18 @@ return $Standup
         // Check if there are matches for someone being busy
         // If so, update that user's "retries", add them to the end of the list, and pick a new person
         } else if ($matches2) {
-            if ($Standup->currentUser[$channel][1] < $Standup->maxRetry) {
-                array_push($Standup->currentUsers[$channel], $Standup->currentUser[$channel]);
-                $Standup->currentUser[$channel][1]++;
+            if ($Standup->currentUser[$channel][2] < $Standup->maxRetry) {
+                $Standup->currentUser[$channel][2]++;
+                if ($Standup->currentUser[$channel][2] < $Standup->maxRetry) {
+                    array_push($Standup->currentUsers[$channel], $Standup->currentUser[$channel]);
+                }
                 $Standup->Minion->msg("{$Standup->currentUser[$channel][0]} is unavailable. Moved to the end of the list.", $channel);
             }
+
+            $Standup->pickUser($channel);
+        } elseif ($matches3) {
+            $Standup->Minion->msg("{$Standup->currentUser[$channel][0]} has been removed from the standup list.", $channel);
+            $Standup->userDepart($Standup->currentUser[$channel][0]);
             $Standup->pickUser($channel);
         }
     }
@@ -328,10 +358,7 @@ return $Standup
  * Minion uses it to get users real names.
  */
 ->on('311', function (&$data) use ($Standup) {
-    
     $nickname = $data['arguments'][1];
-    
-    
     $realName = explode(' ', $data['message'])[0];
     
     // Attach a real name and retry counter to every user 
@@ -358,33 +385,34 @@ return $Standup
  * Minion adds the newbie to the standup list if standup is currently happening
  */
 ->on('JOIN', function (&$data) use ($Standup) {
-    $channel = $data['message'];
+    $channel = $data['arguments'][0];
     $newUser = $data['source'];
     
     // Use a regex to get the actual name of the newbie
     preg_match('/(.*)(?=!)/', $newUser, $matches);
-    
     if ($matches[0] != $Standup->Minion->State['Nickname'] && $Standup->standing) {
         array_push($Standup->currentUsers[$channel], array($matches[0], $matches[0], 0));
-    }   
+    }
 })
 
 
+
 /** 
- * This event is triggered when someone quits the server (different from PART)
+ * This event is triggered when someone quits the room
+ * Minion removes the quitter from the standup list if standup is currently happening
+ */
+->on('PART', function (&$data) use ($Standup) {
+    $oldUser = $data['source'];
+    $Standup->userDepart($oldUser);
+})
+
+/** 
+ * This event is triggered when someone quits IRC
  * Minion removes the quitter from the standup list if standup is currently happening
  */
 ->on('QUIT', function (&$data) use ($Standup) {
     $oldUser = $data['source'];
-    
-    // Use a regex to get the actual name of the quitter
-    preg_match('/(.*)(?=!)/', $newUser, $matches);
-    
-    if ($Standup->standing) {
-        foreach ($Standup->channels as $channel) { 
-           $Standup->currentUsers[$channel] = $Standup->removeUser($matches[0], $Standup->currentUsers[$channel]);
-        }
-    }
+    $Standup->userDepart($oldUser);
 })
 
 ?>
